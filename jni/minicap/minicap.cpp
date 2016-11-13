@@ -18,7 +18,7 @@
 
 #include "util/debug.h"
 #include "JpgEncoder.hpp"
-#include "SimpleServer.hpp"
+#include "SimpleClient.hpp"
 #include "Projection.hpp"
 
 #define BANNER_VERSION 1
@@ -45,6 +45,8 @@ usage(const char* pname) {
     "  -S:            Skip frames when they cannot be consumed quickly enough.\n"
     "  -t:            Attempt to get the capture method running, then exit.\n"
     "  -i:            Get display information in JSON format. May segfault.\n"
+    "  -l:            local server ip \n "
+    "  -p:            local server port \n "
     "  -h:            Show help.\n",
     pname, DEFAULT_DISPLAY_ID, DEFAULT_SOCKET_NAME
   );
@@ -213,9 +215,11 @@ main(int argc, char* argv[]) {
   bool skipFrames = false;
   bool testOnly = false;
   Projection proj;
-
+  const char* host = "127.0.0.1";
+  uint32_t port    = 8888;
+ 
   int opt;
-  while ((opt = getopt(argc, argv, "d:n:P:siSth")) != -1) {
+  while ((opt = getopt(argc, argv, "d:n:P:l:p:siSth")) != -1) {
     switch (opt) {
     case 'd':
       displayId = atoi(optarg);
@@ -231,6 +235,12 @@ main(int argc, char* argv[]) {
       }
       break;
     }
+    case 'l':
+      host = optarg;
+      break;
+    case 'p':
+      port = atoi(optarg);
+      break;
     case 's':
       takeScreenshot = true;
       break;
@@ -341,7 +351,8 @@ main(int argc, char* argv[]) {
   bool haveFrame = false;
 
   // Server config.
-  SimpleServer server;
+  int fd = -1;
+  SimpleClient server;
 
   // Set up minicap.
   Minicap* minicap = minicap_create(displayId);
@@ -421,9 +432,9 @@ main(int argc, char* argv[]) {
     std::cout << "OK" << std::endl;
     return EXIT_SUCCESS;
   }
-
-  if (!server.start(sockname)) {
-    MCERROR("Unable to start server on namespace '%s'", sockname);
+  fd = server.conn(host, port);
+  if (fd < 0) {
+    MCERROR("Unable to start server on host '%s', port'%d'", host, port);
     goto disaster;
   }
 
@@ -439,13 +450,12 @@ main(int argc, char* argv[]) {
   banner[22] = (unsigned char) desiredInfo.orientation;
   banner[23] = quirks;
 
-  int fd;
-  while (!gWaiter.isStopped() && (fd = server.accept()) > 0) {
-    MCINFO("New client connection");
+  while (!gWaiter.isStopped() > 0) {
+    MCINFO("start client connection");
 
     if (pumps(fd, banner, BANNER_SIZE) < 0) {
       close(fd);
-      continue;
+      goto disaster;
     }
 
     int pending, err;
@@ -499,7 +509,8 @@ main(int argc, char* argv[]) {
       putUInt32LE(data, size);
 
       if (pumps(fd, data, size + 4) < 0) {
-        break;
+        MCERROR("server disconneted ");
+        goto disaster;
       }
 
       // This will call onFrameAvailable() on older devices, so we have

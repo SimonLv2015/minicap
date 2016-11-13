@@ -5,7 +5,7 @@ LOCAL_MODULE := minicap-common
 
 LOCAL_SRC_FILES := \
 	JpgEncoder.cpp \
-	SimpleServer.cpp \
+	SimpleClient.cpp \
 	minicap.cpp \
 
 LOCAL_STATIC_LIBRARIES := \
